@@ -193,189 +193,234 @@ client.on('messageCreate', (message) => {
             .setTitle('🏆 Leaderboard 🏆')
             .setDescription('Top 10 users by balance:')
             .addFields(
-                ...sortedUsers.map(([id, data], index) => ({ name: `${index + 1}. <@${id}>`, value: `💰 ${data.balance}`, inline: true }))
-            )
-            .setFooter({ text: 'Keep earning to climb the ranks!' });
+                ...sortedUsers.map(([id, { balance }], index) => ({
+                    name: `#${index + 1} <@${id}>`,
+                    value: `💰 ${balance}`,
+                    inline: true
+                }))
+            );
 
         message.channel.send({ embeds: [leaderboardEmbed] });
     }
 
-    // Respond to &8ball command
-    if (message.content.startsWith('&8ball')) {
-        const responses = [
-            "Yes.",
-            "No.",
-            "Maybe.",
-            "Ask again later.",
-            "Definitely!",
-            "Absolutely not."
-        ];
-        const randomResponse = responses[Math.floor(Math.random() * responses.length)];
-        const question = message.content.split(' ').slice(1).join(' ');
-        message.channel.send(`🎱 **${question}** - ${randomResponse}`);
-    }
-
     // Respond to &setnickname command
     if (message.content.startsWith('&setnickname')) {
-        const newNickname = message.content.split(' ').slice(1).join(' ');
-        message.member.setNickname(newNickname)
-            .then(() => message.channel.send(`Your nickname has been changed to: ${newNickname}`))
-            .catch(err => message.channel.send('I cannot change your nickname.'));
+        const nickname = message.content.split(' ').slice(1).join(' ');
+        if (!nickname) return message.reply('Please provide a new nickname!');
+
+        message.member.setNickname(nickname)
+            .then(() => message.reply(`Your nickname has been changed to **${nickname}**`))
+            .catch(err => message.reply('I cannot change your nickname.'));
     }
 
     // Respond to &serverinfo command
     if (message.content === '&serverinfo') {
-        const serverEmbed = new EmbedBuilder()
-            .setColor('#00ff99')
+        const serverInfoEmbed = new EmbedBuilder()
+            .setColor('#00BFFF')
             .setTitle('Server Info')
             .addFields(
                 { name: 'Server Name', value: message.guild.name, inline: true },
                 { name: 'Total Members', value: message.guild.memberCount.toString(), inline: true },
-                { name: 'Server Creation Date', value: message.guild.createdAt.toDateString(), inline: true }
-            )
-            .setFooter({ text: 'Server details fetched!' });
+                { name: 'Created At', value: message.guild.createdAt.toDateString(), inline: true },
+                { name: 'Region', value: message.guild.region, inline: true },
+                { name: 'Owner', value: `<@${message.guild.ownerId}>`, inline: true }
+            );
 
-        message.channel.send({ embeds: [serverEmbed] });
+        message.channel.send({ embeds: [serverInfoEmbed] });
     }
 
     // Respond to &poll command
     if (message.content.startsWith('&poll')) {
         const pollQuestion = message.content.split(' ').slice(1).join(' ');
-        message.channel.send(`Poll: **${pollQuestion}**\nReact with 👍 for Yes and 👎 for No!`);
+        if (!pollQuestion) return message.reply('Please provide a question for the poll!');
+
+        message.channel.send(`📊 **Poll:** ${pollQuestion}`).then(pollMessage => {
+            pollMessage.react('👍'); // Add thumbs up reaction
+            pollMessage.react('👎'); // Add thumbs down reaction
+        });
     }
 
-    // Respond to &kick command (Admin only)
-    if (message.content.startsWith('&kick')) {
-        if (!message.member.permissions.has('KICK_MEMBERS')) return message.reply("You don't have permission to kick members.");
-        const userToKick = message.mentions.members.first();
-        if (userToKick) {
-            userToKick.kick()
-                .then(() => message.channel.send(`Successfully kicked ${userToKick.user.tag}`))
-                .catch(err => message.channel.send('I cannot kick this member.'));
-        } else {
-            message.reply('Please mention a valid user to kick.');
+    // Respond to &avatar command
+    if (message.content === '&avatar') {
+        message.channel.send(`Your avatar: ${message.author.displayAvatarURL({ dynamic: true })}`);
+    }
+
+    // Respond to &8ball command
+    if (message.content.startsWith('&8ball')) {
+        const answers = [
+            "Yes, definitely.",
+            "It is certain.",
+            "Don't count on it.",
+            "Yes, in due time.",
+            "My sources say no.",
+            "Outlook not so good."
+        ];
+        const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+        message.channel.send(`🎱 ${randomAnswer}`);
+    }
+
+    // Respond to &rps command
+    if (message.content.startsWith('&rps')) {
+        const userChoice = message.content.split(' ')[1].toLowerCase();
+        const choices = ['rock', 'paper', 'scissors'];
+        const botChoice = choices[Math.floor(Math.random() * choices.length)];
+
+        if (!choices.includes(userChoice)) return message.reply('Please choose rock, paper, or scissors!');
+
+        const result = (userChoice === botChoice) ? "It's a tie!" :
+            (userChoice === 'rock' && botChoice === 'scissors') || 
+            (userChoice === 'paper' && botChoice === 'rock') || 
+            (userChoice === 'scissors' && botChoice === 'paper') ? "You win!" : "You lose!";
+
+        message.channel.send(`You chose: ${userChoice}\nI chose: ${botChoice}\n${result}`);
+    }
+
+    // Moderation commands for server admins
+    if (message.member.permissions.has("KICK_MEMBERS") && message.content.startsWith('&kick')) {
+        const member = message.mentions.members.first();
+        if (!member) return message.reply('Please mention a user to kick.');
+
+        member.kick()
+            .then(() => message.reply(`Kicked ${member.displayName}`))
+            .catch(err => message.reply('I was unable to kick that user.'));
+    }
+
+    if (message.member.permissions.has("BAN_MEMBERS") && message.content.startsWith('&ban')) {
+        const member = message.mentions.members.first();
+        if (!member) return message.reply('Please mention a user to ban.');
+
+        member.ban()
+            .then(() => message.reply(`Banned ${member.displayName}`))
+            .catch(err => message.reply('I was unable to ban that user.'));
+    }
+
+    // Owner commands for the bot owner
+    if (message.author.id === OWNER_ID) {
+        // Respond to &owner balance command
+        if (message.content.startsWith('&owner balance')) {
+            const userId = message.content.split(' ')[2];
+            if (!userId || !economy[userId]) return message.reply('Please provide a valid user ID.');
+
+            message.channel.send(`User <@${userId}> has a balance of 💰 ${economy[userId].balance}`);
         }
-    }
 
-    // Respond to &ban command (Admin only)
-    if (message.content.startsWith('&ban')) {
-        if (!message.member.permissions.has('BAN_MEMBERS')) return message.reply("You don't have permission to ban members.");
-        const userToBan = message.mentions.members.first();
-        if (userToBan) {
-            userToBan.ban()
-                .then(() => message.channel.send(`Successfully banned ${userToBan.user.tag}`))
-                .catch(err => message.channel.send('I cannot ban this member.'));
-        } else {
-            message.reply('Please mention a valid user to ban.');
+        // Respond to &owner reset command
+        if (message.content.startsWith('&owner reset')) {
+            const userId = message.content.split(' ')[2];
+            if (!userId || !economy[userId]) return message.reply('Please provide a valid user ID.');
+
+            economy[userId].balance = 0;
+            message.channel.send(`Reset the balance for <@${userId}> to 💰 0.`);
         }
-    }
 
-    // Respond to &warn command (Mod only)
-    if (message.content.startsWith('&warn')) {
-        if (!message.member.permissions.has('MANAGE_MESSAGES')) return message.reply("You don't have permission to warn members.");
-        const [_, userMention, ...reasonArray] = message.content.split(' ');
-        const reason = reasonArray.join(' ') || 'No reason provided.';
-        const userToWarn = message.mentions.members.first();
-        if (userToWarn) {
-            message.channel.send(`🚨 ${userToWarn.user.tag} has been warned for: ${reason}`);
-        } else {
-            message.reply('Please mention a valid user to warn.');
-        }
-    }
-
-    // Respond to &mute command (Mod only)
-    if (message.content.startsWith('&mute')) {
-        if (!message.member.permissions.has('MANAGE_ROLES')) return message.reply("You don't have permission to mute members.");
-        const userToMute = message.mentions.members.first();
-        if (userToMute) {
-            const muteRole = message.guild.roles.cache.find(role => role.name === 'Muted');
-            if (!muteRole) {
-                message.reply('Mute role does not exist. Please create a role called "Muted".');
-                return;
-            }
-            userToMute.roles.add(muteRole)
-                .then(() => message.channel.send(`🔇 ${userToMute.user.tag} has been muted.`))
-                .catch(err => message.channel.send('I cannot mute this member.'));
-        } else {
-            message.reply('Please mention a valid user to mute.');
-        }
-    }
-
-    // Respond to &unmute command (Mod only)
-    if (message.content.startsWith('&unmute')) {
-        if (!message.member.permissions.has('MANAGE_ROLES')) return message.reply("You don't have permission to unmute members.");
-        const userToUnmute = message.mentions.members.first();
-        if (userToUnmute) {
-            const muteRole = message.guild.roles.cache.find(role => role.name === 'Muted');
-            userToUnmute.roles.remove(muteRole)
-                .then(() => message.channel.send(`🔊 ${userToUnmute.user.tag} has been unmuted.`))
-                .catch(err => message.channel.send('I cannot unmute this member.'));
-        } else {
-            message.reply('Please mention a valid user to unmute.');
-        }
-    }
-
-    // Owner commands
-    if (message.content.startsWith('&owner')) {
-        if (message.author.id !== OWNER_ID) return message.reply("You don't have permission to use owner commands.");
-
-        const args = message.content.split(' ').slice(1);
-        const command = args[0];
-
-        if (command === 'balance') {
-            const userToCheck = message.mentions.users.first();
-            if (userToCheck) {
-                message.channel.send(`💰 ${userToCheck.tag}'s balance is: 💰 ${economy[userToCheck.id].balance}`);
-            } else {
-                message.reply('Please mention a valid user to check their balance.');
-            }
-        } else if (command === 'reset') {
-            const userToReset = message.mentions.users.first();
-            if (userToReset) {
-                economy[userToReset.id].balance = 0;
-                message.channel.send(`💰 ${userToReset.tag}'s balance has been reset to 0.`);
-            } else {
-                message.reply('Please mention a valid user to reset their balance.');
-            }
-        } else if (command === 'serverstats') {
-            const totalMembers = message.guild.memberCount;
+        // Respond to &owner serverstats command
+        if (message.content === '&owner serverstats') {
             const serverStatsEmbed = new EmbedBuilder()
-                .setColor('#8A2BE2')
-                .setTitle('Server Statistics')
+                .setColor('#FFA500')
+                .setTitle('Server Stats')
                 .addFields(
-                    { name: 'Total Members', value: totalMembers.toString(), inline: true },
-                    { name: 'Online Members', value: message.guild.members.cache.filter(m => m.presence?.status === 'online').size.toString(), inline: true },
-                    { name: 'Created On', value: message.guild.createdAt.toDateString(), inline: true }
+                    { name: 'Total Members', value: message.guild.memberCount.toString(), inline: true },
+                    { name: 'Server Name', value: message.guild.name, inline: true },
+                    { name: 'Owner', value: `<@${message.guild.ownerId}>`, inline: true },
                 );
 
             message.channel.send({ embeds: [serverStatsEmbed] });
-        } else if (command === 'shutdown') {
-            message.channel.send('Shutting down...').then(() => client.destroy());
-        } else if (command === 'update') {
-            const userToUpdate = message.mentions.users.first();
-            const newBalance = parseInt(args[2]);
-            if (userToUpdate && !isNaN(newBalance)) {
-                economy[userToUpdate.id].balance = newBalance;
-                message.channel.send(`💰 ${userToUpdate.tag}'s balance has been updated to: 💰 ${newBalance}`);
-            } else {
-                message.reply('Please mention a valid user and provide a new balance.');
-            }
-        } else {
-            message.reply('Unknown owner command. Use &owner help for a list of commands.');
+        }
+
+        // Respond to &owner shutdown command
+        if (message.content === '&owner shutdown') {
+            message.channel.send('Shutting down the bot...')
+                .then(() => {
+                    client.destroy();
+                    process.exit(0);
+                });
+        }
+
+        // Respond to &owner update command
+        if (message.content.startsWith('&owner update')) {
+            const userId = message.content.split(' ')[2];
+            const newBalance = parseInt(message.content.split(' ')[3]);
+            if (!userId || isNaN(newBalance)) return message.reply('Please provide a valid user ID and new balance.');
+
+            economy[userId].balance = newBalance;
+            message.channel.send(`Updated <@${userId}>'s balance to 💰 ${newBalance}.`);
         }
     }
-});
 
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
+    // Music commands
+    if (message.content.startsWith('&play')) {
+        const url = message.content.split(' ')[1];
+        const ytdl = require('ytdl-core');
 
-    if (interaction.customId === 'help_close') {
-        await interaction.reply({ content: 'Help menu closed.', ephemeral: true });
-        const message = await interaction.fetchReply();
-        message.delete();
+        if (!ytdl.validateURL(url)) {
+            return message.reply('Please provide a valid YouTube URL.');
+        }
+
+        const voiceChannel = message.member.voice.channel;
+        if (!voiceChannel) {
+            return message.reply('You need to be in a voice channel to play music!');
+        }
+
+        const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: message.guild.id,
+            adapterCreator: message.guild.voiceAdapterCreator,
+        });
+
+        const resource = createAudioResource(ytdl(url, { filter: 'audioonly' }));
+        player.play(resource);
+        connection.subscribe(player);
+
+        player.on('error', error => {
+            console.error(`Error: ${error.message}`);
+            message.reply('An error occurred while trying to play the music.');
+        });
+
+        player.on('idle', () => {
+            connection.disconnect();
+        });
+
+        message.channel.send(`Now playing: ${url}`);
     }
 
-    // Add more button interactions as needed...
+    if (message.content === '&stop') {
+        const voiceChannel = message.member.voice.channel;
+        if (!voiceChannel) {
+            return message.reply('You need to be in a voice channel to stop music!');
+        }
+        player.stop();
+        message.channel.send('Music stopped.');
+    }
+
+    // Trivia command
+    if (message.content === '&trivia') {
+        const triviaQuestions = [
+            { question: "What is the capital of France?", answer: "paris" },
+            { question: "What is 2 + 2?", answer: "4" },
+            { question: "What is the largest planet in our solar system?", answer: "jupiter" },
+        ];
+
+        const trivia = triviaQuestions[Math.floor(Math.random() * triviaQuestions.length)];
+        message.channel.send(trivia.question);
+
+        const filter = m => m.author.id === message.author.id;
+        const collector = message.channel.createMessageCollector({ filter, time: 30000 });
+
+        collector.on('collect', m => {
+            if (m.content.toLowerCase() === trivia.answer) {
+                message.channel.send(`Correct! 🎉`);
+                collector.stop();
+            } else {
+                message.channel.send(`Wrong answer! Try again.`);
+            }
+        });
+
+        collector.on('end', collected => {
+            if (collected.size === 0) {
+                message.channel.send(`Time's up! The correct answer was: ${trivia.answer}`);
+            }
+        });
+    }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
